@@ -56,8 +56,8 @@
     - 이벤트 콜백 동작 검증
     - _요구사항: 1.1_
 
-- [ ] 7. 가상 데스크톱 제어 시스템 구현
-  - [ ] 7.1 VirtualDesktopController 클래스 구현
+- [x] 7. 가상 데스크톱 제어 시스템 구현
+  - [x] 7.1 VirtualDesktopController 클래스 구현
     - IVirtualDesktopManager 인터페이스를 통한 가상 데스크톱 상태 감지
     - 데스크톱 전환 시 창 고정 로직 구현
     - _요구사항: 1.1, 1.2, 1.4_
