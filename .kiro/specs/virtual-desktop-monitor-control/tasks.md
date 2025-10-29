@@ -11,13 +11,13 @@
   - 핵심 데이터 모델 클래스 정의 (WindowInfo, WindowState, MonitorInfo, AppConfig)
   - _요구사항: 1.3, 2.4, 3.1_
 
-- [ ] 3. Windows API 래퍼 및 유틸리티 구현
-  - [ ] 3.1 WindowsAPI 래퍼 클래스 구현
+- [x] 3. Windows API 래퍼 및 유틸리티 구현
+  - [x] 3.1 WindowsAPI 래퍼 클래스 구현
     - Windows API 함수들을 Python에서 사용하기 위한 래퍼 작성
     - 오류 처리 및 예외 변환 로직 구현
     - _요구사항: 4.2, 4.3_
 
-  - [ ] 3.2 Logger 유틸리티 구현
+  - [x] 3.2 Logger 유틸리티 구현
     - 파일 기반 로깅 시스템 구현
     - 로그 레벨별 메시지 분류 및 저장
     - _요구사항: 4.4_
