@@ -14,6 +14,7 @@ sys.path.insert(0, str(project_root))
 
 from src.app import VirtualDesktopApp
 from src.logger import get_logger
+from src.error_handler import install_global_exception_handler, uninstall_global_exception_handler, get_resource_manager
 
 
 def parse_arguments():
@@ -53,12 +54,27 @@ def parse_arguments():
 
 def main():
     """메인 함수"""
+    app = None
+    resource_manager = get_resource_manager()
+
     try:
+        # 전역 예외 처리기 설치
+        def crash_handler(exc_type, exc_value, exc_traceback):
+            print(f"\n치명적 오류가 발생했습니다: {exc_type.__name__}: {exc_value}")
+            print("로그 파일을 확인해주세요.")
+            if app:
+                app.stop()
+
+        install_global_exception_handler(crash_handler)
+
         # 명령행 인수 파싱
         args = parse_arguments()
 
         # 애플리케이션 초기화
         app = VirtualDesktopApp()
+
+        # 리소스 매니저에 앱 등록
+        resource_manager.register_resource("app", app, lambda x: x.stop())
 
         # 디버그 모드 설정
         if args.debug:
@@ -97,8 +113,8 @@ def main():
     finally:
         # 정리 작업
         try:
-            if 'app' in locals() and app.is_running():
-                app.stop()
+            resource_manager.cleanup_all()
+            uninstall_global_exception_handler()
         except Exception as e:
             print(f"정리 작업 중 오류: {str(e)}")
 
