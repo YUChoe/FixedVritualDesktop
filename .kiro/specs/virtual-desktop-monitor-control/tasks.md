@@ -1,17 +1,12 @@
 # 구현 계획
 
-- [ ] 1. 개발 환경 설정
-
-
-
-
-
+- [x] 1. 개발 환경 설정
   - Python 가상환경 생성 및 활성화
   - 필요한 라이브러리 설치 (pywin32, pynput, tkinter)
   - requirements.txt 파일 생성
   - _요구사항: 모든 요구사항의 기반 환경_
 
-- [ ] 2. 프로젝트 구조 및 핵심 인터페이스 설정
+- [x] 2. 프로젝트 구조 및 핵심 인터페이스 설정
   - 프로젝트 디렉토리 구조 생성 (src, config, logs 폴더)
   - 핵심 데이터 모델 클래스 정의 (WindowInfo, WindowState, MonitorInfo, AppConfig)
   - _요구사항: 1.3, 2.4, 3.1_
