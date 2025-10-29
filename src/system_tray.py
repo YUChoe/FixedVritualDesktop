@@ -1,0 +1,215 @@
+"""
+시스템 트레이 UI - 최소 기능 구현
+"""
+import tkinter as tk
+from tkinter import messagebox
+import threading
+from typing import Callable, Optional
+from .logger import get_logger
+
+
+class SystemTrayIcon:
+    """시스템 트레이 아이콘 클래스 (간단한 GUI 창으로 대체)"""
+
+    def __init__(self):
+        self.logger = get_logger("SystemTrayIcon")
+        self.root: Optional[tk.Tk] = None
+        self.enabled = False
+        self.toggle_callback: Optional[Callable] = None
+        self.settings_callback: Optional[Callable] = None
+        self.exit_callback: Optional[Callable] = None
+        self._running = False
+
+    def set_callbacks(self, toggle_callback: Callable = None,
+                     settings_callback: Callable = None,
+                     exit_callback: Callable = None) -> None:
+        """콜백 함수들 설정"""
+        self.toggle_callback = toggle_callback
+        self.settings_callback = settings_callback
+        self.exit_callback = exit_callback
+
+    def start(self) -> bool:
+        """트레이 아이콘 시작 (GUI 창으로 대체)"""
+        try:
+            self.root = tk.Tk()
+            self.root.title("가상 데스크톱 모니터 제어")
+            self.root.geometry("300x200")
+
+            # 상태 표시
+            self.status_label = tk.Label(self.root, text="상태: 비활성화", font=("Arial", 12))
+            self.status_label.pack(pady=10)
+
+            # 토글 버튼
+            self.toggle_btn = tk.Button(self.root, text="활성화", command=self._on_toggle)
+            self.toggle_btn.pack(pady=5)
+
+            # 설정 버튼
+            settings_btn = tk.Button(self.root, text="설정", command=self._on_settings)
+            settings_btn.pack(pady=5)
+
+            # 종료 버튼
+            exit_btn = tk.Button(self.root, text="종료", command=self._on_exit)
+            exit_btn.pack(pady=5)
+
+            # 창 닫기 이벤트 처리
+            self.root.protocol("WM_DELETE_WINDOW", self._on_exit)
+
+            self._running = True
+            self.logger.info("시스템 트레이 UI 시작")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"트레이 UI 시작 실패: {str(e)}")
+            return False
+
+    def run(self) -> None:
+        """GUI 메인 루프 실행"""
+        if self.root:
+            self.root.mainloop()
+
+    def stop(self) -> None:
+        """트레이 아이콘 중지"""
+        if self.root and self._running:
+            self.root.quit()
+            self._running = False
+            self.logger.info("시스템 트레이 UI 중지")
+
+    def update_status(self, enabled: bool) -> None:
+        """상태 업데이트"""
+        self.enabled = enabled
+        if self.root:
+            status_text = "상태: 활성화" if enabled else "상태: 비활성화"
+            self.status_label.config(text=status_text)
+
+            toggle_text = "비활성화" if enabled else "활성화"
+            self.toggle_btn.config(text=toggle_text)
+
+    def _on_toggle(self) -> None:
+        """토글 버튼 클릭 처리"""
+        if self.toggle_callback:
+            try:
+                self.toggle_callback()
+            except Exception as e:
+                self.logger.error(f"토글 콜백 실행 중 오류: {str(e)}")
+                messagebox.showerror("오류", f"토글 실행 중 오류가 발생했습니다: {str(e)}")
+
+    def _on_settings(self) -> None:
+        """설정 버튼 클릭 처리"""
+        if self.settings_callback:
+            try:
+                self.settings_callback()
+            except Exception as e:
+                self.logger.error(f"설정 콜백 실행 중 오류: {str(e)}")
+                messagebox.showerror("오류", f"설정 실행 중 오류가 발생했습니다: {str(e)}")
+        else:
+            messagebox.showinfo("설정", "설정 기능은 아직 구현되지 않았습니다.")
+
+    def _on_exit(self) -> None:
+        """종료 버튼 클릭 처리"""
+        if messagebox.askquestion("종료", "정말로 종료하시겠습니까?") == "yes":
+            if self.exit_callback:
+                try:
+                    self.exit_callback()
+                except Exception as e:
+                    self.logger.error(f"종료 콜백 실행 중 오류: {str(e)}")
+            self.stop()
+
+    def is_running(self) -> bool:
+        """실행 상태 반환"""
+        return self._running
+
+
+class SettingsDialog:
+    """설정 대화상자 클래스"""
+
+    def __init__(self, parent=None):
+        self.logger = get_logger("SettingsDialog")
+        self.parent = parent
+        self.dialog = None
+        self.config_callback: Optional[Callable] = None
+
+    def set_config_callback(self, callback: Callable) -> None:
+        """설정 변경 콜백 설정"""
+        self.config_callback = callback
+
+    def show(self, current_config: dict) -> None:
+        """설정 대화상자 표시"""
+        try:
+            self.dialog = tk.Toplevel(self.parent)
+            self.dialog.title("설정")
+            self.dialog.geometry("400x300")
+            self.dialog.resizable(False, False)
+
+            # 모달 설정
+            self.dialog.transient(self.parent)
+            self.dialog.grab_set()
+
+            # 대상 모니터 설정
+            tk.Label(self.dialog, text="대상 모니터:", font=("Arial", 10)).pack(pady=5)
+
+            self.monitor_var = tk.StringVar(value=str(current_config.get('target_monitor_index', 1)))
+            monitor_frame = tk.Frame(self.dialog)
+            monitor_frame.pack(pady=5)
+
+            tk.Radiobutton(monitor_frame, text="주 모니터 (0)", variable=self.monitor_var,
+                          value="0").pack(side=tk.LEFT, padx=10)
+            tk.Radiobutton(monitor_frame, text="보조 모니터 (1)", variable=self.monitor_var,
+                          value="1").pack(side=tk.LEFT, padx=10)
+
+            # 로그 레벨 설정
+            tk.Label(self.dialog, text="로그 레벨:", font=("Arial", 10)).pack(pady=(20,5))
+
+            self.log_var = tk.StringVar(value=current_config.get('log_level', 'INFO'))
+            log_frame = tk.Frame(self.dialog)
+            log_frame.pack(pady=5)
+
+            for level in ['DEBUG', 'INFO', 'WARNING', 'ERROR']:
+                tk.Radiobutton(log_frame, text=level, variable=self.log_var,
+                              value=level).pack(side=tk.LEFT, padx=5)
+
+            # 핫키 활성화
+            self.hotkey_var = tk.BooleanVar(value=current_config.get('hotkey_enabled', True))
+            tk.Checkbutton(self.dialog, text="핫키 활성화 (Win+Ctrl+방향키)",
+                          variable=self.hotkey_var, font=("Arial", 10)).pack(pady=10)
+
+            # 버튼
+            btn_frame = tk.Frame(self.dialog)
+            btn_frame.pack(pady=20)
+
+            tk.Button(btn_frame, text="확인", command=self._on_ok).pack(side=tk.LEFT, padx=10)
+            tk.Button(btn_frame, text="취소", command=self._on_cancel).pack(side=tk.LEFT, padx=10)
+
+            # 창 중앙 배치
+            self.dialog.update_idletasks()
+            x = (self.dialog.winfo_screenwidth() // 2) - (self.dialog.winfo_width() // 2)
+            y = (self.dialog.winfo_screenheight() // 2) - (self.dialog.winfo_height() // 2)
+            self.dialog.geometry(f"+{x}+{y}")
+
+            self.logger.info("설정 대화상자 표시")
+
+        except Exception as e:
+            self.logger.error(f"설정 대화상자 표시 실패: {str(e)}")
+
+    def _on_ok(self) -> None:
+        """확인 버튼 클릭 처리"""
+        try:
+            new_config = {
+                'target_monitor_index': int(self.monitor_var.get()),
+                'log_level': self.log_var.get(),
+                'hotkey_enabled': self.hotkey_var.get()
+            }
+
+            if self.config_callback:
+                self.config_callback(new_config)
+
+            self.dialog.destroy()
+            self.logger.info("설정 변경 완료")
+
+        except Exception as e:
+            self.logger.error(f"설정 저장 중 오류: {str(e)}")
+            messagebox.showerror("오류", f"설정 저장 중 오류가 발생했습니다: {str(e)}")
+
+    def _on_cancel(self) -> None:
+        """취소 버튼 클릭 처리"""
+        self.dialog.destroy()
+        self.logger.info("설정 변경 취소")
