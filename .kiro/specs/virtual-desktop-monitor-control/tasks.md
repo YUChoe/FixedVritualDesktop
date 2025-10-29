@@ -34,7 +34,7 @@
     - _요구사항: 3.1, 4.1_
 
 - [ ] 5. 창 관리 시스템 구현
-  - [ ] 5.1 WindowManager 클래스 구현
+  - [x] 5.1 WindowManager 클래스 구현
     - EnumWindows API를 사용한 창 목록 수집
     - MonitorFromWindow API로 창의 모니터 정보 확인
     - GetWindowPlacement/SetWindowPos API로 창 위치 저장/복원
