@@ -17,15 +17,18 @@ class SystemTrayIcon:
         self.enabled = False
         self.toggle_callback: Optional[Callable] = None
         self.settings_callback: Optional[Callable] = None
+        self.window_management_callback: Optional[Callable] = None
         self.exit_callback: Optional[Callable] = None
         self._running = False
 
     def set_callbacks(self, toggle_callback: Callable = None,
                      settings_callback: Callable = None,
+                     window_management_callback: Callable = None,
                      exit_callback: Callable = None) -> None:
         """콜백 함수들 설정"""
         self.toggle_callback = toggle_callback
         self.settings_callback = settings_callback
+        self.window_management_callback = window_management_callback
         self.exit_callback = exit_callback
 
     def start(self) -> bool:
@@ -42,6 +45,10 @@ class SystemTrayIcon:
             # 토글 버튼
             self.toggle_btn = tk.Button(self.root, text="활성화", command=self._on_toggle)
             self.toggle_btn.pack(pady=5)
+
+            # 창 관리 버튼
+            window_btn = tk.Button(self.root, text="창 관리", command=self._on_window_management)
+            window_btn.pack(pady=5)
 
             # 설정 버튼
             settings_btn = tk.Button(self.root, text="설정", command=self._on_settings)
@@ -93,6 +100,17 @@ class SystemTrayIcon:
                 self.logger.error(f"토글 콜백 실행 중 오류: {str(e)}")
                 messagebox.showerror("오류", f"토글 실행 중 오류가 발생했습니다: {str(e)}")
 
+    def _on_window_management(self) -> None:
+        """창 관리 버튼 클릭 처리"""
+        if self.window_management_callback:
+            try:
+                self.window_management_callback()
+            except Exception as e:
+                self.logger.error(f"창 관리 콜백 실행 중 오류: {str(e)}")
+                messagebox.showerror("오류", f"창 관리 실행 중 오류가 발생했습니다: {str(e)}")
+        else:
+            messagebox.showinfo("창 관리", "창 관리 기능은 아직 구현되지 않았습니다.")
+
     def _on_settings(self) -> None:
         """설정 버튼 클릭 처리"""
         if self.settings_callback:
@@ -117,6 +135,205 @@ class SystemTrayIcon:
     def is_running(self) -> bool:
         """실행 상태 반환"""
         return self._running
+
+
+class WindowManagementDialog:
+    """창 관리 대화상자 클래스"""
+
+    def __init__(self, parent=None):
+        self.logger = get_logger("WindowManagementDialog")
+        self.parent = parent
+        self.dialog = None
+        self.window_manager = None
+        self.window_listbox = None
+        self.pinned_listbox = None
+
+    def show(self, window_manager) -> None:
+        """창 관리 대화상자 표시"""
+        try:
+            self.window_manager = window_manager
+            self.dialog = tk.Toplevel(self.parent)
+            self.dialog.title("창 관리 - 가상 데스크톱 고정 설정")
+            self.dialog.geometry("800x600")
+            self.dialog.resizable(True, True)
+
+            # 모달 설정
+            self.dialog.transient(self.parent)
+            self.dialog.grab_set()
+
+            # 메인 프레임
+            main_frame = tk.Frame(self.dialog)
+            main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+            # 설명 라벨
+            desc_label = tk.Label(main_frame,
+                                text="가상 데스크톱을 따라다닐 창을 선택하세요.\n"
+                                     "고정된 창은 가상 데스크톱 전환 시 자동으로 현재 데스크톱으로 이동합니다.",
+                                font=("Arial", 10), justify=tk.LEFT)
+            desc_label.pack(pady=(0, 10))
+
+            # 좌우 분할 프레임
+            content_frame = tk.Frame(main_frame)
+            content_frame.pack(fill=tk.BOTH, expand=True)
+
+            # 왼쪽: 전체 창 목록
+            left_frame = tk.Frame(content_frame)
+            left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
+
+            tk.Label(left_frame, text="전체 창 목록", font=("Arial", 12, "bold")).pack()
+
+            # 창 목록 리스트박스
+            list_frame = tk.Frame(left_frame)
+            list_frame.pack(fill=tk.BOTH, expand=True, pady=5)
+
+            scrollbar1 = tk.Scrollbar(list_frame)
+            scrollbar1.pack(side=tk.RIGHT, fill=tk.Y)
+
+            self.window_listbox = tk.Listbox(list_frame, yscrollcommand=scrollbar1.set,
+                                           selectmode=tk.SINGLE, font=("Arial", 9))
+            self.window_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            scrollbar1.config(command=self.window_listbox.yview)
+
+            # 버튼 프레임
+            btn_frame1 = tk.Frame(left_frame)
+            btn_frame1.pack(pady=5)
+
+            tk.Button(btn_frame1, text="→ 고정 추가", command=self._add_pinned).pack(side=tk.LEFT, padx=2)
+            tk.Button(btn_frame1, text="새로고침", command=self._refresh_windows).pack(side=tk.LEFT, padx=2)
+
+            # 오른쪽: 고정된 창 목록
+            right_frame = tk.Frame(content_frame)
+            right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(5, 0))
+
+            tk.Label(right_frame, text="고정된 창 목록", font=("Arial", 12, "bold")).pack()
+
+            # 고정된 창 리스트박스
+            pinned_frame = tk.Frame(right_frame)
+            pinned_frame.pack(fill=tk.BOTH, expand=True, pady=5)
+
+            scrollbar2 = tk.Scrollbar(pinned_frame)
+            scrollbar2.pack(side=tk.RIGHT, fill=tk.Y)
+
+            self.pinned_listbox = tk.Listbox(pinned_frame, yscrollcommand=scrollbar2.set,
+                                           selectmode=tk.SINGLE, font=("Arial", 9))
+            self.pinned_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            scrollbar2.config(command=self.pinned_listbox.yview)
+
+            # 버튼 프레임
+            btn_frame2 = tk.Frame(right_frame)
+            btn_frame2.pack(pady=5)
+
+            tk.Button(btn_frame2, text="← 고정 해제", command=self._remove_pinned).pack(side=tk.LEFT, padx=2)
+
+            # 하단 버튼
+            bottom_frame = tk.Frame(main_frame)
+            bottom_frame.pack(pady=10)
+
+            tk.Button(bottom_frame, text="닫기", command=self._close_dialog).pack()
+
+            # 창 중앙 배치
+            self.dialog.update_idletasks()
+            x = (self.dialog.winfo_screenwidth() // 2) - (self.dialog.winfo_width() // 2)
+            y = (self.dialog.winfo_screenheight() // 2) - (self.dialog.winfo_height() // 2)
+            self.dialog.geometry(f"+{x}+{y}")
+
+            # 초기 데이터 로드
+            self._refresh_windows()
+            self._refresh_pinned()
+
+            self.logger.info("창 관리 대화상자 표시")
+
+        except Exception as e:
+            self.logger.error(f"창 관리 대화상자 표시 실패: {str(e)}")
+
+    def _refresh_windows(self) -> None:
+        """전체 창 목록 새로고침"""
+        try:
+            self.window_listbox.delete(0, tk.END)
+            windows = self.window_manager.get_current_windows_for_selection()
+
+            for window in windows:
+                status = " [고정됨]" if window['is_pinned'] else ""
+                display_text = f"{window['title']}{status}"
+                self.window_listbox.insert(tk.END, display_text)
+
+            self.logger.debug(f"전체 창 목록 새로고침: {len(windows)}개")
+
+        except Exception as e:
+            self.logger.error(f"창 목록 새로고침 실패: {str(e)}")
+
+    def _refresh_pinned(self) -> None:
+        """고정된 창 목록 새로고침"""
+        try:
+            self.pinned_listbox.delete(0, tk.END)
+            pinned_windows = self.window_manager.get_pinned_windows()
+
+            for window in pinned_windows:
+                status = " [보임]" if window['is_visible'] else " [숨김]"
+                display_text = f"{window['title']}{status}"
+                self.pinned_listbox.insert(tk.END, display_text)
+
+            self.logger.debug(f"고정된 창 목록 새로고침: {len(pinned_windows)}개")
+
+        except Exception as e:
+            self.logger.error(f"고정된 창 목록 새로고침 실패: {str(e)}")
+
+    def _add_pinned(self) -> None:
+        """선택된 창을 고정 목록에 추가"""
+        try:
+            selection = self.window_listbox.curselection()
+            if not selection:
+                messagebox.showwarning("선택 필요", "고정할 창을 선택해주세요.")
+                return
+
+            index = selection[0]
+            windows = self.window_manager.get_current_windows_for_selection()
+
+            if index < len(windows):
+                window = windows[index]
+                if window['is_pinned']:
+                    messagebox.showinfo("이미 고정됨", "선택한 창은 이미 고정되어 있습니다.")
+                    return
+
+                if self.window_manager.add_pinned_window(window['hwnd']):
+                    messagebox.showinfo("고정 완료", f"'{window['title']}' 창이 고정되었습니다.")
+                    self._refresh_windows()
+                    self._refresh_pinned()
+                else:
+                    messagebox.showerror("고정 실패", "창 고정에 실패했습니다.")
+
+        except Exception as e:
+            self.logger.error(f"창 고정 추가 실패: {str(e)}")
+            messagebox.showerror("오류", f"창 고정 중 오류가 발생했습니다: {str(e)}")
+
+    def _remove_pinned(self) -> None:
+        """선택된 창을 고정 목록에서 제거"""
+        try:
+            selection = self.pinned_listbox.curselection()
+            if not selection:
+                messagebox.showwarning("선택 필요", "고정 해제할 창을 선택해주세요.")
+                return
+
+            index = selection[0]
+            pinned_windows = self.window_manager.get_pinned_windows()
+
+            if index < len(pinned_windows):
+                window = pinned_windows[index]
+                if self.window_manager.remove_pinned_window(window['hwnd']):
+                    messagebox.showinfo("고정 해제", f"'{window['title']}' 창의 고정이 해제되었습니다.")
+                    self._refresh_windows()
+                    self._refresh_pinned()
+                else:
+                    messagebox.showerror("고정 해제 실패", "창 고정 해제에 실패했습니다.")
+
+        except Exception as e:
+            self.logger.error(f"창 고정 해제 실패: {str(e)}")
+            messagebox.showerror("오류", f"창 고정 해제 중 오류가 발생했습니다: {str(e)}")
+
+    def _close_dialog(self) -> None:
+        """대화상자 닫기"""
+        self.dialog.destroy()
+        self.logger.info("창 관리 대화상자 닫기")
 
 
 class SettingsDialog:

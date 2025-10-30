@@ -6,7 +6,7 @@ import time
 from typing import Optional
 from .config_manager import ConfigManager
 from .virtual_desktop_controller import VirtualDesktopController
-from .system_tray import SystemTrayIcon, SettingsDialog
+from .system_tray import SystemTrayIcon, SettingsDialog, WindowManagementDialog
 from .logger import get_logger_manager, get_logger
 
 
@@ -23,6 +23,7 @@ class VirtualDesktopApp:
         self.controller: Optional[VirtualDesktopController] = None
         self.tray_icon: Optional[SystemTrayIcon] = None
         self.settings_dialog: Optional[SettingsDialog] = None
+        self.window_dialog: Optional[WindowManagementDialog] = None
 
         self._running = False
 
@@ -63,6 +64,7 @@ class VirtualDesktopApp:
             self.tray_icon.set_callbacks(
                 toggle_callback=self._on_toggle,
                 settings_callback=self._on_settings,
+                window_management_callback=self._on_window_management,
                 exit_callback=self._on_exit
             )
 
@@ -70,6 +72,8 @@ class VirtualDesktopApp:
             if self.tray_icon.start():
                 self.settings_dialog = SettingsDialog(self.tray_icon.root)
                 self.settings_dialog.set_config_callback(self._on_config_changed)
+
+                self.window_dialog = WindowManagementDialog(self.tray_icon.root)
 
                 # 초기 상태 설정
                 config = self.config_manager.get_config()
@@ -146,6 +150,15 @@ class VirtualDesktopApp:
 
         except Exception as e:
             self.logger.error(f"토글 처리 중 오류: {str(e)}")
+
+    def _on_window_management(self) -> None:
+        """창 관리 버튼 클릭 처리"""
+        try:
+            if self.window_dialog and self.controller:
+                window_manager = self.controller.get_window_manager()
+                self.window_dialog.show(window_manager)
+        except Exception as e:
+            self.logger.error(f"창 관리 대화상자 표시 중 오류: {str(e)}")
 
     def _on_settings(self) -> None:
         """설정 버튼 클릭 처리"""

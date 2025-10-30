@@ -52,11 +52,18 @@ class WindowManager:
     def restore_window_state(self, hwnd: int) -> bool:
         """창 상태 복원"""
         if hwnd not in self._window_states:
+            self.logger.debug(f"창 상태 없음 (hwnd: {hwnd})")
             return False
 
         try:
             placement = self._window_states[hwnd]
-            return self.api.restore_window_placement(hwnd, placement)
+            self.logger.debug(f"창 복원 시도 (hwnd: {hwnd}), placement: {placement}")
+            result = self.api.restore_window_placement(hwnd, placement)
+            if result:
+                self.logger.debug(f"창 복원 API 성공 (hwnd: {hwnd})")
+            else:
+                self.logger.debug(f"창 복원 API 실패 (hwnd: {hwnd})")
+            return result
         except Exception as e:
             self.logger.error(f"창 상태 복원 실패 (hwnd: {hwnd}): {str(e)}")
             return False
@@ -77,12 +84,15 @@ class WindowManager:
         """모니터의 모든 창 상태 복원"""
         restored_count = 0
 
+        # 저장된 모든 창 상태를 복원 시도
         for hwnd in list(self._window_states.keys()):
             if self.api.is_window_valid(hwnd):
-                current_monitor = self.api.get_monitor_from_window(hwnd)
-                if current_monitor == monitor_handle:
-                    if self.restore_window_state(hwnd):
-                        restored_count += 1
+                # 가상 데스크톱 전환 후에는 모니터 체크 없이 복원 시도
+                if self.restore_window_state(hwnd):
+                    restored_count += 1
+                    self.logger.debug(f"창 복원 성공: {hwnd}")
+                else:
+                    self.logger.debug(f"창 복원 실패: {hwnd}")
 
         self.logger.info(f"모니터 {monitor_handle}의 창 {restored_count}개 상태 복원")
         return restored_count

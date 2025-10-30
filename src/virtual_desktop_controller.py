@@ -1,28 +1,28 @@
 """
-가상 데스크톱 제어 시스템 - 최소 기능 구현
+가상 데스크톱 제어 시스템 - 선택적 창 고정 기능
 """
 from typing import Callable, Optional
 import time
 from .monitor_manager import MonitorManager
-from .window_manager import WindowManager
+from .selective_window_manager import SelectiveWindowManager
 from .hotkey_listener import HotkeyListener
 from .logger import get_logger
 
 
 class VirtualDesktopController:
-    """가상 데스크톱 제어 클래스"""
+    """가상 데스크톱 제어 클래스 - 선택된 창만 가상 데스크톱을 따라다님"""
 
     def __init__(self, target_monitor_index: int = 1):
         """
         Args:
-            target_monitor_index: 창을 고정할 대상 모니터 인덱스 (0: 주모니터, 1+: 보조모니터)
+            target_monitor_index: 사용하지 않음 (하위 호환성을 위해 유지)
         """
         self.logger = get_logger("VirtualDesktopController")
         self.target_monitor_index = target_monitor_index
 
         # 매니저 초기화
         self.monitor_manager = MonitorManager()
-        self.window_manager = WindowManager()
+        self.window_manager = SelectiveWindowManager()
         self.hotkey_listener = HotkeyListener()
 
         # 핫키 콜백 설정
@@ -35,11 +35,14 @@ class VirtualDesktopController:
     def start(self) -> bool:
         """가상 데스크톱 제어 시작"""
         try:
+            # 핫키 리스너 시작
             if self.hotkey_listener.start():
                 self._enabled = True
-                self.logger.info(f"가상 데스크톱 제어 시작 (대상 모니터: {self.target_monitor_index})")
+                pinned_count = len(self.window_manager.get_pinned_windows())
+                self.logger.info(f"선택적 창 고정 시스템 시작 (고정된 창: {pinned_count}개)")
                 return True
-            return False
+            else:
+                return False
         except Exception as e:
             self.logger.error(f"가상 데스크톱 제어 시작 실패: {str(e)}")
             return False
@@ -48,7 +51,7 @@ class VirtualDesktopController:
         """가상 데스크톱 제어 중지"""
         self._enabled = False
         self.hotkey_listener.stop()
-        self.logger.info("가상 데스크톱 제어 중지")
+        self.logger.info("선택적 창 고정 시스템 중지")
 
     def _on_hotkey_pressed(self, direction: str) -> None:
         """핫키 눌림 이벤트 처리"""
@@ -69,27 +72,31 @@ class VirtualDesktopController:
             self.logger.error(f"데스크톱 전환 처리 중 오류: {str(e)}")
 
     def _handle_desktop_switch(self, direction: str) -> None:
-        """데스크톱 전환 처리"""
-        # 대상 모니터 확인
-        target_monitor = self.monitor_manager.get_monitor_by_index(self.target_monitor_index)
-        if not target_monitor:
-            self.logger.warning(f"대상 모니터 {self.target_monitor_index}를 찾을 수 없음")
-            return
+        """데스크톱 전환 처리 - 고정된 창들만 이동"""
+        try:
+            self.logger.info(f"가상 데스크톱 전환 처리 시작: {direction}")
 
-        # 대상 모니터의 창들 상태 저장
-        saved_count = self.window_manager.save_monitor_windows(target_monitor.handle)
+            # 고정된 창 목록 확인
+            pinned_windows = self.window_manager.get_pinned_windows()
 
-        if saved_count > 0:
-            self.logger.info(f"모니터 {self.target_monitor_index}의 창 {saved_count}개 고정 처리")
+            if pinned_windows:
+                self.logger.info(f"고정된 창 {len(pinned_windows)}개 감지")
 
-            # 잠시 대기 후 복원 (가상 데스크톱 전환 완료 대기)
-            time.sleep(0.5)
+                # 가상 데스크톱 전환 완료 대기
+                time.sleep(0.8)
 
-            # 창 상태 복원
-            restored_count = self.window_manager.restore_monitor_windows(target_monitor.handle)
-            self.logger.info(f"창 {restored_count}개 복원 완료")
-        else:
-            self.logger.debug("고정할 창이 없음")
+                # 고정된 창들을 현재 데스크톱으로 이동
+                moved_count = self.window_manager.move_pinned_windows_to_current_desktop()
+
+                if moved_count > 0:
+                    self.logger.info(f"고정된 창 {moved_count}개를 현재 데스크톱으로 이동 완료")
+                else:
+                    self.logger.warning("고정된 창 이동에 실패했습니다")
+            else:
+                self.logger.debug("고정된 창이 없어 이동할 창이 없음")
+
+        except Exception as e:
+            self.logger.error(f"데스크톱 전환 처리 중 오류: {str(e)}")
 
     def set_target_monitor(self, monitor_index: int) -> bool:
         """대상 모니터 변경"""
@@ -108,12 +115,15 @@ class VirtualDesktopController:
 
     def get_status(self) -> dict:
         """현재 상태 정보 반환"""
-        target_monitor = self.monitor_manager.get_monitor_by_index(self.target_monitor_index)
+        window_status = self.window_manager.get_status()
 
         return {
             'enabled': self._enabled,
-            'target_monitor_index': self.target_monitor_index,
-            'target_monitor_name': target_monitor.device_name if target_monitor else None,
             'hotkey_listener_running': self.hotkey_listener.is_running(),
-            'monitor_count': len(self.monitor_manager.get_monitors())
+            'monitor_count': len(self.monitor_manager.get_monitors()),
+            'pinned_windows': window_status
         }
+
+    def get_window_manager(self) -> SelectiveWindowManager:
+        """창 관리자 반환 (UI에서 사용)"""
+        return self.window_manager

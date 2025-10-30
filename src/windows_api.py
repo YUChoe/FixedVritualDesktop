@@ -131,10 +131,46 @@ class WindowsAPIWrapper:
     def restore_window_placement(self, hwnd: int, placement_data: tuple) -> bool:
         """창 배치 정보를 복원"""
         try:
+            self.logger.debug(f"창 복원 시도 (hwnd: {hwnd}), placement: {placement_data}")
+
+            # placement_data에서 창 위치 정보 추출
+            # placement_data 형식: (flags, showCmd, ptMinPosition, ptMaxPosition, rcNormalPosition)
+            if len(placement_data) >= 5:
+                flags, show_cmd, pt_min, pt_max, rect = placement_data
+                left, top, right, bottom = rect
+
+                # 음수 좌표 보정
+                if left < 0 or top < 0:
+                    self.logger.debug(f"음수 좌표 감지, 보정 시도 (hwnd: {hwnd})")
+                    # 서브모니터 좌표로 보정 (1920 이후가 서브모니터)
+                    if left < 1920:  # 주모니터 영역
+                        left = max(1920, left + 1920)  # 서브모니터로 이동
+                        right = left + (right - rect[0])
+                    top = max(0, top)  # Y 좌표는 0 이상으로
+                    bottom = max(top + 100, bottom)  # 최소 높이 보장
+
+                # SetWindowPos로 직접 위치 설정
+                self.logger.debug(f"SetWindowPos 호출: hwnd={hwnd}, pos=({left},{top},{right-left},{bottom-top})")
+                result = win32gui.SetWindowPos(
+                    hwnd, 0, left, top, right - left, bottom - top,
+                    win32con.SWP_NOZORDER | win32con.SWP_NOACTIVATE
+                )
+
+                if result:
+                    self.logger.debug(f"창 복원 성공 (hwnd: {hwnd})")
+                    return True
+                else:
+                    self.logger.debug(f"SetWindowPos 실패 (hwnd: {hwnd})")
+
+            # 기존 방식도 시도
+            self.logger.debug(f"SetWindowPlacement 호출 시도 (hwnd: {hwnd})")
             result = win32gui.SetWindowPlacement(hwnd, placement_data)
-            if not result:
-                self._handle_win32_error("창 배치 복원")
+            if result:
+                self.logger.debug(f"SetWindowPlacement 성공 (hwnd: {hwnd})")
+            else:
+                self.logger.debug(f"SetWindowPlacement 실패 (hwnd: {hwnd})")
             return result
+
         except Exception as e:
             self.logger.error(f"창 배치 복원 실패 (hwnd: {hwnd}): {str(e)}")
             return False
