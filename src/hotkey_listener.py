@@ -4,6 +4,7 @@
 from pynput import keyboard
 from typing import Callable, Optional
 import threading
+import time
 from .logger import get_logger
 
 
@@ -16,6 +17,15 @@ class HotkeyListener:
         self._callback: Optional[Callable] = None
         self._pressed_keys = set()
         self._running = False
+
+        # 중복 감지 방지
+        self._last_trigger_time = 0
+        self._trigger_cooldown = 1.0  # 1초 쿨다운 (더 강력한 중복 방지)
+        self._last_combination = None
+
+        # 키 상태 추적 (키 반복 방지)
+        self._key_states = {}  # 키별 마지막 이벤트 시간
+        self._key_repeat_threshold = 0.1  # 100ms 내 같은 키 이벤트 무시
 
     def set_callback(self, callback: Callable[[str], None]) -> None:
         """핫키 감지 시 호출할 콜백 함수 설정"""
@@ -46,6 +56,7 @@ class HotkeyListener:
             self._listener.stop()
             self._running = False
             self._pressed_keys.clear()
+            self._key_states.clear()
             self.logger.info("핫키 리스너 중지됨")
 
     def _on_key_press(self, key) -> None:
@@ -59,14 +70,41 @@ class HotkeyListener:
             else:
                 key_name = str(key).replace("'", "")
 
+            current_time = time.time()
+
+            # 키 반복 방지 - 같은 키가 짧은 시간 내에 반복되면 무시
+            if key_name in self._key_states:
+                if current_time - self._key_states[key_name] < self._key_repeat_threshold:
+                    return  # 키 반복 무시
+
+            self._key_states[key_name] = current_time
+
+            # 키가 이미 눌린 상태라면 무시 (키 반복 방지)
+            if key_name in self._pressed_keys:
+                return
+
             self._pressed_keys.add(key_name)
 
-            # Win + Ctrl + Left/Right 조합 감지
-            if self._is_target_combination():
-                direction = 'left' if 'left' in self._pressed_keys else 'right'
-                if self._callback:
-                    self._callback(direction)
-                    self.logger.info(f"핫키 감지: Win+Ctrl+{direction}")
+            # 방향키가 새로 눌렸을 때만 핫키 조합 확인
+            if key_name in ['left', 'right']:
+                self.logger.debug(f"방향키 눌림: {key_name}, 현재 키들: {sorted(self._pressed_keys)}")
+
+                if self._is_target_combination():
+                    direction = key_name  # 방금 눌린 방향키 사용
+                    current_combination = f"win_ctrl_{direction}"
+
+                    # 중복 감지 방지
+                    if (current_time - self._last_trigger_time > self._trigger_cooldown or
+                        current_combination != self._last_combination):
+
+                        if self._callback:
+                            self._callback(direction)
+                            self.logger.info(f"핫키 감지: Win+Ctrl+{direction}")
+
+                        self._last_trigger_time = current_time
+                        self._last_combination = current_combination
+                    else:
+                        self.logger.debug(f"핫키 중복 감지 방지: {direction} (쿨다운 {self._trigger_cooldown}초)")
 
         except Exception as e:
             self.logger.error(f"키 눌림 처리 중 오류: {str(e)}")
@@ -83,6 +121,10 @@ class HotkeyListener:
 
             self._pressed_keys.discard(key_name)
 
+            # 키 상태에서도 제거
+            if key_name in self._key_states:
+                del self._key_states[key_name]
+
         except Exception as e:
             self.logger.error(f"키 놓음 처리 중 오류: {str(e)}")
 
@@ -94,10 +136,21 @@ class HotkeyListener:
         # Ctrl 키 확인
         has_ctrl = any(k in self._pressed_keys for k in ['ctrl', 'ctrl_l', 'ctrl_r'])
 
-        # 방향키 확인
-        has_arrow = any(k in self._pressed_keys for k in ['left', 'right'])
+        # 방향키 확인 (정확히 하나의 방향키만)
+        has_left = 'left' in self._pressed_keys
+        has_right = 'right' in self._pressed_keys
 
-        return has_win and has_ctrl and has_arrow
+        # 방향키가 하나만 눌렸을 때만 유효
+        has_single_arrow = (has_left and not has_right) or (has_right and not has_left)
+
+        # 모든 조건이 만족되는지 확인
+        result = has_win and has_ctrl and has_single_arrow
+
+        if result:
+            direction = 'left' if has_left else 'right'
+            self.logger.debug(f"키 조합 확인: Win={has_win}, Ctrl={has_ctrl}, Arrow={direction}")
+
+        return result
 
     def is_running(self) -> bool:
         """리스너 실행 상태 반환"""

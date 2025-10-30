@@ -3,6 +3,7 @@
 """
 from typing import Callable, Optional
 import time
+import threading
 from .monitor_manager import MonitorManager
 from .selective_window_manager import SelectiveWindowManager
 from .hotkey_listener import HotkeyListener
@@ -30,7 +31,12 @@ class VirtualDesktopController:
 
         self._enabled = False
         self._last_action_time = 0
-        self._action_cooldown = 1.0  # 1초 쿨다운
+        self._action_cooldown = 1.5  # 1.5초 쿨다운 (중복 방지)
+
+        # 가상 데스크톱 추적
+        self._current_desktop_id = None
+        self._last_desktop_id = None
+        self._processing_lock = threading.Lock()  # 동시 실행 방지
 
     def start(self) -> bool:
         """가상 데스크톱 제어 시작"""
@@ -58,23 +64,78 @@ class VirtualDesktopController:
         if not self._enabled:
             return
 
-        # 쿨다운 체크
-        current_time = time.time()
-        if current_time - self._last_action_time < self._action_cooldown:
+        # 동시 실행 방지
+        if not self._processing_lock.acquire(blocking=False):
+            self.logger.debug("이미 처리 중인 데스크톱 전환이 있어 무시")
             return
 
-        self._last_action_time = current_time
-
         try:
+            # 쿨다운 체크
+            current_time = time.time()
+            if current_time - self._last_action_time < self._action_cooldown:
+                self.logger.debug(f"쿨다운 중 ({self._action_cooldown}초) - 무시")
+                return
+
+            self._last_action_time = current_time
+
             self.logger.info(f"가상 데스크톱 전환 감지: {direction}")
             self._handle_desktop_switch(direction)
+
         except Exception as e:
             self.logger.error(f"데스크톱 전환 처리 중 오류: {str(e)}")
+        finally:
+            self._processing_lock.release()
+
+    def _get_current_desktop_id(self) -> Optional[str]:
+        """현재 가상 데스크톱 ID 가져오기"""
+        try:
+            import win32gui
+
+            # 현재 보이는 창들의 조합으로 데스크톱 상태 식별
+            visible_windows = []
+
+            def enum_windows_proc(hwnd, lParam):
+                if win32gui.IsWindowVisible(hwnd):
+                    try:
+                        title = win32gui.GetWindowText(hwnd)
+                        if title.strip() and len(title.strip()) > 0:  # 제목이 있는 창만
+                            # 시스템 창 제외
+                            excluded_titles = ['Program Manager', 'Windows 입력 환경', 'Desktop Window Manager']
+                            if title not in excluded_titles:
+                                visible_windows.append(hwnd)
+                    except:
+                        pass
+                return True
+
+            win32gui.EnumWindows(enum_windows_proc, 0)
+
+            # 보이는 창들의 핸들 조합으로 데스크톱 식별자 생성
+            if visible_windows:
+                # 상위 10개 창의 핸들을 정렬하여 고유 ID 생성
+                sorted_windows = sorted(visible_windows[:10])
+                desktop_id = "desktop_" + "_".join([str(hwnd % 10000) for hwnd in sorted_windows])
+                return desktop_id
+
+            return "desktop_empty"
+
+        except Exception as e:
+            self.logger.debug(f"데스크톱 ID 가져오기 실패: {str(e)}")
+            return None
 
     def _handle_desktop_switch(self, direction: str) -> None:
         """데스크톱 전환 처리 - 고정된 창들만 이동"""
         try:
             self.logger.info(f"가상 데스크톱 전환 처리 시작: {direction}")
+
+            # 현재 데스크톱 ID 확인
+            current_desktop_id = self._get_current_desktop_id()
+
+            # 같은 데스크톱에서 연속 실행 방지
+            if (current_desktop_id and
+                current_desktop_id == self._last_desktop_id and
+                self._last_desktop_id is not None):
+                self.logger.info(f"같은 데스크톱({current_desktop_id[:20]}...)에서 연속 실행 - 무시")
+                return
 
             # 고정된 창 목록 확인
             pinned_windows = self.window_manager.get_pinned_windows()
@@ -85,15 +146,34 @@ class VirtualDesktopController:
                 # 가상 데스크톱 전환 완료 대기
                 time.sleep(0.8)
 
-                # 고정된 창들을 현재 데스크톱으로 이동
-                moved_count = self.window_manager.move_pinned_windows_to_current_desktop()
+                # 데스크톱 전환 후 ID 다시 확인
+                new_desktop_id = self._get_current_desktop_id()
 
-                if moved_count > 0:
-                    self.logger.info(f"고정된 창 {moved_count}개를 현재 데스크톱으로 이동 완료")
+                # 실제로 데스크톱이 변경되었는지 확인
+                if new_desktop_id and new_desktop_id != current_desktop_id:
+                    self.logger.info(f"데스크톱 변경 확인: {current_desktop_id[:20]}... -> {new_desktop_id[:20]}...")
+
+                    # 고정된 창들을 현재 데스크톱으로 이동
+                    moved_count = self.window_manager.move_pinned_windows_to_current_desktop()
+
+                    if moved_count > 0:
+                        self.logger.info(f"고정된 창 {moved_count}개를 현재 데스크톱으로 이동 완료")
+                        self._last_desktop_id = new_desktop_id
+                        # 성공적으로 이동한 후 추가 쿨다운 적용
+                        self._last_action_time = time.time()
+                    else:
+                        self.logger.warning("고정된 창 이동에 실패했습니다")
                 else:
-                    self.logger.warning("고정된 창 이동에 실패했습니다")
+                    self.logger.info("데스크톱 변경이 감지되지 않음 - 창 이동 생략")
+                    # 데스크톱 ID 업데이트
+                    if new_desktop_id:
+                        self._last_desktop_id = new_desktop_id
+
             else:
                 self.logger.debug("고정된 창이 없어 이동할 창이 없음")
+                # 데스크톱 ID는 업데이트
+                if current_desktop_id:
+                    self._last_desktop_id = current_desktop_id
 
         except Exception as e:
             self.logger.error(f"데스크톱 전환 처리 중 오류: {str(e)}")
