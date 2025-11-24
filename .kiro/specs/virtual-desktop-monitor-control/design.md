@@ -88,37 +88,53 @@ class MonitorManager:
 
 ### 4. VirtualDesktopController
 
-**역할**: 가상 데스크톱 상태 관리
+**역할**: 가상 데스크톱 상태 관리 및 선택적 창 고정
 
 ```python
 class VirtualDesktopController:
     def get_current_desktop_id(self) -> str
-    def detect_desktop_change(self) -> bool
     def handle_desktop_switch(self, direction: str) -> None
+    def get_window_manager(self) -> SelectiveWindowManager
 ```
 
 **주요 기능**:
-- IVirtualDesktopManager 인터페이스 활용
-- 가상 데스크톱 전환 감지
-- 창 고정 로직 조율
+- 보이는 창 목록 조합으로 데스크톱 상태 식별
+- 가상 데스크톱 전환 감지 (핫키 기반)
+- 고정된 창만 현재 데스크톱으로 이동
 
 ### 5. SystemTrayIcon
 
-**역할**: 시스템 트레이 UI
+**역할**: 시스템 트레이 UI (tkinter GUI 창으로 구현)
 
 ```python
 class SystemTrayIcon:
-    def create_tray_icon(self) -> None
-    def show_context_menu(self) -> None
-    def toggle_enabled_state(self) -> None
-    def open_settings(self) -> None
+    def start(self) -> bool
+    def run(self) -> None
+    def update_status(self, enabled: bool) -> None
 ```
 
 **주요 기능**:
-- 트레이 아이콘 표시 및 상태 표시
-- 우클릭 컨텍스트 메뉴 제공
-- 활성화/비활성화 토글
-- 설정 창 열기
+- tkinter 기반 GUI 창 제공
+- 활성화/비활성화 토글 버튼
+- 창 관리 대화상자 열기
+- 설정 대화상자 열기
+
+### 6. SelectiveWindowManager
+
+**역할**: 선택적 창 고정 관리
+
+```python
+class SelectiveWindowManager:
+    def add_pinned_window(self, hwnd: int) -> bool
+    def remove_pinned_window(self, hwnd: int) -> bool
+    def get_pinned_windows(self) -> List[dict]
+    def move_pinned_windows_to_current_desktop(self) -> int
+```
+
+**주요 기능**:
+- 사용자가 선택한 창만 고정 목록에 추가
+- 고정된 창 목록 JSON 파일로 저장/로드
+- 가상 데스크톱 전환 시 고정된 창만 이동
 
 ## 데이터 모델
 
@@ -167,10 +183,12 @@ class MonitorInfo:
 ```python
 @dataclass
 class AppConfig:
-    fixed_monitors: List[int]
     enabled: bool
+    target_monitor_index: int
+    hotkey_enabled: bool
     log_level: str
-    config_version: str
+    auto_start: bool
+    window_filters: List[str]
 ```
 
 ## 오류 처리
@@ -181,84 +199,45 @@ class AppConfig:
 - **복구**: 기본값 반환 또는 기능 비활성화
 - **로깅**: 상세한 오류 정보 기록
 
-### 2. 모니터 연결 변화
+### 2. 가상 데스크톱 전환 감지
 
-- **감지**: WM_DISPLAYCHANGE 메시지 모니터링
-- **대응**: 모니터 목록 재조회 및 설정 업데이트
-- **알림**: 사용자에게 변경 사항 알림
-
-### 3. 권한 부족
-
-- **확인**: 관리자 권한 필요 여부 체크
-- **안내**: 사용자에게 권한 상승 요청
-- **대안**: 제한된 기능으로 동작
-
-### 4. 가상 데스크톱 API 실패
-
-- **대체**: 폴링 방식으로 데스크톱 변화 감지
-- **제한**: 일부 기능 비활성화
-- **복구**: 주기적 재시도
+- **방식**: 보이는 창 목록 조합으로 데스크톱 상태 식별
+- **쿨다운**: 중복 실행 방지를 위한 1.5초 쿨다운
+- **복구**: 예외 발생 시 로깅 후 다음 전환 대기
 
 ## 테스트 전략
 
-### 1. 단위 테스트
-
-- **WindowManager**: 창 정보 수집 및 복원 로직
-- **MonitorManager**: 모니터 정보 관리
-- **ConfigManager**: 설정 저장/로드
-- **WindowsAPI**: API 래퍼 함수들
-
-### 2. 통합 테스트
-
-- **가상 데스크톱 전환 시나리오**: 실제 키 입력으로 전환 테스트
-- **멀티 모니터 환경**: 다양한 모니터 구성에서 테스트
-- **창 복원 정확성**: 창 위치가 정확히 복원되는지 확인
-
-### 3. 시스템 테스트
-
-- **장시간 실행**: 메모리 누수 및 안정성 테스트
-- **다양한 애플리케이션**: 여러 종류의 창에서 동작 확인
-- **시스템 리소스**: CPU 및 메모리 사용량 모니터링
-
-### 4. 사용자 시나리오 테스트
-
-- **일반적인 워크플로우**: 개발자의 실제 사용 패턴 시뮬레이션
-- **설정 변경**: 모니터 설정 변경 시 동작 확인
-- **오류 상황**: 예상치 못한 상황에서의 복구 능력 테스트
+현재 구현은 수동 테스트를 통해 검증되었습니다. 자동화된 테스트는 향후 추가 예정입니다.
 
 ## 성능 고려사항
 
 ### 1. 메모리 사용량
 
-- **창 정보 캐싱**: 필요한 정보만 메모리에 유지
-- **주기적 정리**: 더 이상 존재하지 않는 창 정보 제거
-- **효율적인 데이터 구조**: 빠른 검색을 위한 해시맵 활용
+- **선택적 창 추적**: 고정된 창만 메모리에 유지
+- **유효성 검증**: 더 이상 존재하지 않는 창 자동 제거
 
 ### 2. CPU 사용량
 
-- **이벤트 기반 처리**: 폴링 대신 이벤트 기반 아키텍처
-- **지연 로딩**: 필요할 때만 창 정보 수집
+- **이벤트 기반 처리**: 핫키 감지 시에만 동작
+- **쿨다운 메커니즘**: 중복 실행 방지로 CPU 사용 최소화
 - **백그라운드 스레드**: UI 블로킹 방지
 
 ### 3. 응답 시간
 
-- **빠른 키 감지**: 50ms 이내 키 입력 감지
-- **즉시 창 복원**: 200ms 이내 창 위치 복원
-- **비동기 처리**: 무거운 작업은 별도 스레드에서 처리
+- **빠른 키 감지**: pynput을 통한 즉각적인 키 입력 감지
+- **비동기 처리**: 창 이동 작업은 별도 처리
 
 ## 보안 고려사항
 
 ### 1. 권한 관리
 
-- **최소 권한 원칙**: 필요한 최소한의 권한만 요청
-- **권한 확인**: 실행 시 필요한 권한 보유 여부 확인
+- **최소 권한 원칙**: 필요한 최소한의 권한만 사용
 - **안전한 API 사용**: 검증된 Windows API만 사용
 
 ### 2. 데이터 보호
 
-- **설정 파일 암호화**: 민감한 설정 정보 보호
+- **로컬 설정 파일**: JSON 형식으로 로컬에 저장
 - **로그 정보 제한**: 개인정보가 포함된 로그 방지
-- **임시 파일 정리**: 사용 후 임시 파일 안전 삭제
 
 ## 배포 및 설치
 
