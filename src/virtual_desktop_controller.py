@@ -127,6 +127,11 @@ class VirtualDesktopController:
         try:
             self.logger.info(f"가상 데스크톱 전환 처리 시작: {direction}")
 
+            # down 키는 즉시 창 이동 (데스크톱 전환 없음)
+            if direction == 'down':
+                self._handle_immediate_window_move()
+                return
+
             # 현재 데스크톱 ID 확인
             current_desktop_id = self._get_current_desktop_id()
 
@@ -177,6 +182,31 @@ class VirtualDesktopController:
 
         except Exception as e:
             self.logger.error(f"데스크톱 전환 처리 중 오류: {str(e)}")
+
+    def _handle_immediate_window_move(self) -> None:
+        """즉시 고정된 창들을 현재 데스크톱으로 이동 (Win+Ctrl+Down)"""
+        try:
+            self.logger.info("즉시 창 이동 요청 (Win+Ctrl+Down)")
+
+            # 고정된 창 목록 확인
+            pinned_windows = self.window_manager.get_pinned_windows()
+
+            if not pinned_windows:
+                self.logger.info("고정된 창이 없어 이동할 창이 없음")
+                return
+
+            self.logger.info(f"고정된 창 {len(pinned_windows)}개를 현재 데스크톱으로 즉시 이동")
+
+            # 고정된 창들을 현재 데스크톱으로 이동
+            moved_count = self.window_manager.move_pinned_windows_to_current_desktop()
+
+            if moved_count > 0:
+                self.logger.info(f"고정된 창 {moved_count}개를 현재 데스크톱으로 이동 완료")
+            else:
+                self.logger.warning("고정된 창 이동에 실패했습니다")
+
+        except Exception as e:
+            self.logger.error(f"즉시 창 이동 처리 중 오류: {str(e)}")
 
     def set_target_monitor(self, monitor_index: int) -> bool:
         """대상 모니터 변경"""

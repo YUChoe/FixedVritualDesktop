@@ -86,7 +86,7 @@ class HotkeyListener:
             self._pressed_keys.add(key_name)
 
             # 방향키가 새로 눌렸을 때만 핫키 조합 확인
-            if key_name in ['left', 'right']:
+            if key_name in ['left', 'right', 'down']:
                 self.logger.debug(f"방향키 눌림: {key_name}, 현재 키들: {sorted(self._pressed_keys)}")
 
                 if self._is_target_combination():
@@ -129,7 +129,7 @@ class HotkeyListener:
             self.logger.error(f"키 놓음 처리 중 오류: {str(e)}")
 
     def _is_target_combination(self) -> bool:
-        """목표 키 조합인지 확인 (Win + Ctrl + Left/Right)"""
+        """목표 키 조합인지 확인 (Win + Ctrl + Left/Right/Down)"""
         # Windows 키 확인 (cmd 또는 cmd_l, cmd_r)
         has_win = any(k in self._pressed_keys for k in ['cmd', 'cmd_l', 'cmd_r'])
 
@@ -139,15 +139,22 @@ class HotkeyListener:
         # 방향키 확인 (정확히 하나의 방향키만)
         has_left = 'left' in self._pressed_keys
         has_right = 'right' in self._pressed_keys
+        has_down = 'down' in self._pressed_keys
 
         # 방향키가 하나만 눌렸을 때만 유효
-        has_single_arrow = (has_left and not has_right) or (has_right and not has_left)
+        arrow_count = sum([has_left, has_right, has_down])
+        has_single_arrow = arrow_count == 1
 
         # 모든 조건이 만족되는지 확인
         result = has_win and has_ctrl and has_single_arrow
 
         if result:
-            direction = 'left' if has_left else 'right'
+            if has_left:
+                direction = 'left'
+            elif has_right:
+                direction = 'right'
+            else:
+                direction = 'down'
             self.logger.debug(f"키 조합 확인: Win={has_win}, Ctrl={has_ctrl}, Arrow={direction}")
 
         return result
