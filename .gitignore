@@ -1,4 +1,9 @@
 .venv
+.venv_*
+*.build
+*.dist
+*.onefile-build
+*.exe
 logs/*
 __pycache__
 config/*
