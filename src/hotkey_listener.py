@@ -90,7 +90,15 @@ class HotkeyListener:
                 self.logger.debug(f"방향키 눌림: {key_name}, 현재 키들: {sorted(self._pressed_keys)}")
 
                 if self._is_target_combination():
-                    direction = key_name  # 방금 눌린 방향키 사용
+                    # Alt 키 확인
+                    has_alt = any(k in self._pressed_keys for k in ['alt', 'alt_l', 'alt_r'])
+
+                    # Win+Ctrl+Alt+Down 조합인지 확인
+                    if has_alt and key_name == 'down':
+                        direction = 'alt_down'
+                    else:
+                        direction = key_name  # 방금 눌린 방향키 사용
+
                     current_combination = f"win_ctrl_{direction}"
 
                     # 중복 감지 방지
@@ -99,7 +107,10 @@ class HotkeyListener:
 
                         if self._callback:
                             self._callback(direction)
-                            self.logger.info(f"핫키 감지: Win+Ctrl+{direction}")
+                            if direction == 'alt_down':
+                                self.logger.info(f"핫키 감지: Win+Ctrl+Alt+Down")
+                            else:
+                                self.logger.info(f"핫키 감지: Win+Ctrl+{direction}")
 
                         self._last_trigger_time = current_time
                         self._last_combination = current_combination
@@ -129,12 +140,15 @@ class HotkeyListener:
             self.logger.error(f"키 놓음 처리 중 오류: {str(e)}")
 
     def _is_target_combination(self) -> bool:
-        """목표 키 조합인지 확인 (Win + Ctrl + Left/Right/Down)"""
+        """목표 키 조합인지 확인 (Win + Ctrl + Left/Right/Down 또는 Win + Ctrl + Alt + Down)"""
         # Windows 키 확인 (cmd 또는 cmd_l, cmd_r)
         has_win = any(k in self._pressed_keys for k in ['cmd', 'cmd_l', 'cmd_r'])
 
         # Ctrl 키 확인
         has_ctrl = any(k in self._pressed_keys for k in ['ctrl', 'ctrl_l', 'ctrl_r'])
+
+        # Alt 키 확인
+        has_alt = any(k in self._pressed_keys for k in ['alt', 'alt_l', 'alt_r'])
 
         # 방향키 확인 (정확히 하나의 방향키만)
         has_left = 'left' in self._pressed_keys
@@ -145,8 +159,13 @@ class HotkeyListener:
         arrow_count = sum([has_left, has_right, has_down])
         has_single_arrow = arrow_count == 1
 
-        # 모든 조건이 만족되는지 확인
-        result = has_win and has_ctrl and has_single_arrow
+        # Win + Ctrl + Alt + Down 조합 확인
+        if has_win and has_ctrl and has_alt and has_down:
+            self.logger.debug(f"키 조합 확인: Win+Ctrl+Alt+Down")
+            return True
+
+        # Win + Ctrl + Left/Right/Down 조합 확인 (Alt 없음)
+        result = has_win and has_ctrl and not has_alt and has_single_arrow
 
         if result:
             if has_left:

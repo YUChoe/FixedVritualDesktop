@@ -127,6 +127,11 @@ class VirtualDesktopController:
         try:
             self.logger.info(f"가상 데스크톱 전환 처리 시작: {direction}")
 
+            # alt_down 키는 포커스 창을 메인 모니터 중앙으로 이동
+            if direction == 'alt_down':
+                self._handle_center_window()
+                return
+
             # down 키는 즉시 창 이동 (데스크톱 전환 없음)
             if direction == 'down':
                 self._handle_immediate_window_move()
@@ -207,6 +212,72 @@ class VirtualDesktopController:
 
         except Exception as e:
             self.logger.error(f"즉시 창 이동 처리 중 오류: {str(e)}")
+
+    def _handle_center_window(self) -> None:
+        """포커스 창을 메인 모니터 중앙으로 이동 및 크기 조정 (Win+Ctrl+Alt+Down)"""
+        try:
+            import win32gui
+            import win32con
+
+            self.logger.info("포커스 창 중앙 이동 요청 (Win+Ctrl+Alt+Down)")
+
+            # 현재 포커스 창 가져오기
+            hwnd = win32gui.GetForegroundWindow()
+            if not hwnd:
+                self.logger.warning("포커스된 창이 없음")
+                return
+
+            # 창 정보 가져오기
+            from .windows_api import WindowsAPIWrapper
+            api = WindowsAPIWrapper()
+            window_info = api.get_window_info(hwnd)
+
+            if not window_info:
+                self.logger.warning(f"창 정보를 가져올 수 없음 (hwnd: {hwnd})")
+                return
+
+            self.logger.info(f"포커스 창: {window_info.title} (hwnd: {hwnd})")
+
+            # 메인 모니터 정보 가져오기
+            primary_monitor = self.monitor_manager.get_primary_monitor()
+            if not primary_monitor:
+                self.logger.error("메인 모니터를 찾을 수 없음")
+                return
+
+            # 목표 크기
+            target_width = 1500
+            target_height = 1392
+
+            # 메인 모니터 중앙 좌표 계산
+            center_x = primary_monitor.x + (primary_monitor.width - target_width) // 2
+            center_y = primary_monitor.y + (primary_monitor.height - target_height) // 2
+
+            self.logger.info(f"메인 모니터: {primary_monitor.width}x{primary_monitor.height} at ({primary_monitor.x}, {primary_monitor.y})")
+            self.logger.info(f"목표 위치: ({center_x}, {center_y}), 크기: {target_width}x{target_height}")
+
+            # 창이 최소화되어 있으면 복원
+            if window_info.state == window_info.state.MINIMIZED:
+                win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+                time.sleep(0.1)
+
+            # 창 위치 및 크기 설정
+            result = win32gui.SetWindowPos(
+                hwnd,
+                win32con.HWND_TOP,
+                center_x,
+                center_y,
+                target_width,
+                target_height,
+                win32con.SWP_SHOWWINDOW
+            )
+
+            if result:
+                self.logger.info(f"창을 메인 모니터 중앙으로 이동 완료: '{window_info.title}'")
+            else:
+                self.logger.warning(f"창 이동 실패: '{window_info.title}'")
+
+        except Exception as e:
+            self.logger.error(f"포커스 창 중앙 이동 처리 중 오류: {str(e)}")
 
     def set_target_monitor(self, monitor_index: int) -> bool:
         """대상 모니터 변경"""
